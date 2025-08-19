@@ -373,9 +373,10 @@ function getOrderDetails(orderId) {
 
 // Функция для форматирования валюты
 function formatCurrency(amount) {
-    return new Intl.NumberFormat('ru-RU', {
+    return new Intl.NumberFormat('kk-KZ', {
         style: 'currency',
-        currency: 'RUB',
+        currency: 'KZT',
+        currencyDisplay: 'narrowSymbol', // даёт символ ₸
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
     }).format(amount);
