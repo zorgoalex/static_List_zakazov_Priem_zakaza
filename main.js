@@ -1,142 +1,86 @@
-// main.js - Основная логика приложения
+// main.js — инициализация и навигация
+// ===== Утилиты форматирования (добавить в самый верх main.js) =====
+window.formatCurrency = (value, opts = {}) => {
+  const n = Number(value) || 0;
+  const fractionDigits = opts.fractionDigits ?? 0; // в тенге чаще без копеек
+  try {
+    return new Intl.NumberFormat('kk-KZ', {
+      style: 'currency',
+      currency: 'KZT',
+      currencyDisplay: 'narrowSymbol', // символ ₸
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    }).format(n);
+  } catch {
+    return `${n.toLocaleString('ru-RU')} ₸`;
+  }
+};
+
+window.formatDate = (iso) => {
+  if (!iso) return '';
+  // если это ISO YYYY-MM-DD, форматируем как ДД.ММ.ГГГГ
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+};
+// ===== конец вставки =====
+
+
 class App {
-    constructor() {
-        this.currentPage = 'orders-list';
-        this.init();
+  constructor() {
+    this.currentPage = 'orders-list';
+    this.init();
+  }
+
+  init() {
+    window.filtersManager = new FiltersManager();
+    window.tableManager = new TableManager();
+    window.orderFormManager = new OrderFormManager();
+
+    this.bindNav();
+    this.showPage('orders-list');
+    this.loadInitialStats();
+  }
+
+  bindNav() {
+    document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => this.showPage(btn.dataset.page));
+    });
+  }
+
+  showPage(id) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const target = document.getElementById(id);
+    if (target) target.classList.add('active');
+    this.currentPage = id;
+    if (id === 'orders-list') window.filtersManager?.applyFilters();
+  }
+
+  loadInitialStats() { window.filtersManager?.applyFilters(); }
+
+  showMessage(text, type='info', duration=3000) {
+    let box = document.getElementById('messages-container');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'messages-container';
+      box.style.cssText = 'position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:9999';
+      document.body.appendChild(box);
     }
-    
-    init() {
-        // Инициализация менеджеров
-        window.filtersManager = new FiltersManager();
-        window.tableManager = new TableManager();
-        window.orderFormManager = new OrderFormManager();
-        
-        // Инициализация навигации
-        this.initNavigation();
-        
-        // Первоначальная загрузка данных
-        this.loadInitialData();
-        
-        // Показ сообщений
-        this.initMessaging();
-        
-        console.log('Система управления заказами загружена');
-    }
-    
-    initNavigation() {
-        document.querySelectorAll('.nav-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const page = btn.dataset.page;
-                this.showPage(page);
-                
-                // Обновление активной навигации
-                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
-        });
-    }
-    
-    showPage(pageId) {
-        // Скрытие всех страниц
-        document.querySelectorAll('.page').forEach(page => {
-            page.classList.remove('active');
-        });
-        
-        // Показ выбранной страницы
-        const targetPage = document.getElementById(pageId);
-        if (targetPage) {
-            targetPage.classList.add('active');
-            this.currentPage = pageId;
-            
-            // Дополнительная логика для конкретных страниц
-            if (pageId === 'orders-list') {
-                window.filtersManager?.applyFilters();
-            }
-        }
-    }
-    
-    loadInitialData() {
-        // Первоначальная загрузка и отображение заказов
-        if (window.filtersManager) {
-            window.filtersManager.applyFilters();
-        }
-        
-        // Установка текущей даты в фильтрах
-        const today = new Date();
-        const weekAgo = new Date(today);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        
-        document.getElementById('date-from').value = weekAgo.toISOString().split('T')[0];
-        document.getElementById('date-to').value = today.toISOString().split('T')[0];
-    }
-    
-    initMessaging() {
-        // Создание контейнера для сообщений если его нет
-        if (!document.getElementById('messages-container')) {
-            const container = document.createElement('div');
-            container.id = 'messages-container';
-            container.style.cssText = `
-                position: fixed;
-                top: 80px;
-                right: 20px;
-                z-index: 2000;
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-                max-width: 400px;
-            `;
-            document.body.appendChild(container);
-        }
-    }
-    
-    showMessage(text, type = 'info', duration = 3000) {
-        const container = document.getElementById('messages-container');
-        const message = document.createElement('div');
-        
-        message.className = `message ${type} show`;
-        message.textContent = text;
-        message.style.cssText = `
-            padding: 12px 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            transform: translateX(100%);
-            transition: transform 0.3s ease;
-        `;
-        
-        container.appendChild(message);
-        
-        // Анимация появления
-        setTimeout(() => {
-            message.style.transform = 'translateX(0)';
-        }, 10);
-        
-        // Автоматическое скрытие
-        setTimeout(() => {
-            message.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                if (message.parentNode) {
-                    message.parentNode.removeChild(message);
-                }
-            }, 300);
-        }, duration);
-    }
+    const el = document.createElement('div');
+    el.className = `message ${type}`;
+    el.style.cssText = 'padding:12px 16px;border-radius:8px;background:#111827;color:white;opacity:.95;box-shadow:0 6px 16px rgba(0,0,0,.2)';
+    el.textContent = text;
+    box.appendChild(el);
+    setTimeout(() => el.remove(), duration);
+  }
 }
 
-// Глобальные функции для удобства
-window.showPage = function(pageId) {
-    if (window.app) {
-        window.app.showPage(pageId);
-    }
-};
+window.showPage = (pageId) => window.app?.showPage(pageId);
+window.showMessage = (text, type='info', duration=3000) => window.app?.showMessage(text, type, duration);
 
-window.showMessage = function(text, type = 'info', duration = 3000) {
-    if (window.app) {
-        window.app.showMessage(text, type, duration);
-    }
-};
-
-// Инициализация приложения при загрузке DOM
-document.addEventListener('DOMContentLoaded', () => {
-    window.app = new App();
-});
+document.addEventListener('DOMContentLoaded', () => { window.app = new App(); });

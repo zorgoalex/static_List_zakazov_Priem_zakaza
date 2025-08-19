@@ -1,505 +1,330 @@
-// popups.js - Модуль управления модальными окнами и формами
+// popups.js — форма заказа (создание/просмотр/редактирование) + Позиции заказа
 class OrderFormManager {
-    constructor() {
-        this.isEditMode = false;
-        this.currentOrderId = null;
-        this.currentDetails = [];
-        this.editingDetailIndex = -1;
-        
-        this.initEventListeners();
-        this.populateSelects();
-        this.initClientAutocomplete();
+  constructor() {
+    // состояние
+    this.isEditMode = false;
+    this.isReadOnly = false;
+    this.currentOrderId = null;
+    this.itemsLocal = []; // локальная копия позиций текущего заказа
+
+    // кэш DOM
+    this.cacheEls();
+    this.bindBaseEvents();
+    this.setDefaults();
+
+    // утилиты
+    if (!window.formatArea) window.formatArea = (m2, frac=1) => `${(Number(m2)||0).toFixed(frac)} м²`;
+  }
+
+  // ---------- DOM ----------
+  cacheEls() {
+    this.page = document.getElementById('new-order');
+    this.title = document.getElementById('order-form-title');
+
+    this.inputs = {
+      order_name: document.getElementById('order-name'),
+      order_date: document.getElementById('order-date'),
+      planned_completion_date: document.getElementById('planned-completion'),
+      total_amount: document.getElementById('total-amount-input'),
+      discount: document.getElementById('discount'),
+      client_name: document.getElementById('client-name'),
+      client_phone: document.getElementById('client-phone')
+    };
+
+    this.btnAdd = document.getElementById('add-order-btn');
+    this.btnCancel = document.getElementById('cancel-order');
+    this.btnSave = document.getElementById('save-order');
+    this.btnSaveDraft = document.getElementById('save-draft');
+    this.form = document.getElementById('order-form');
+
+    // позиции заказа
+    this.btnAddItem = document.getElementById('add-item');
+    this.itemsTbody = document.getElementById('order-items-tbody');
+    this.sumPositions = document.getElementById('sum-positions');
+    this.sumDetails = document.getElementById('sum-details');
+    this.sumArea = document.getElementById('sum-area');
+  }
+
+  bindBaseEvents() {
+    this.btnAdd?.addEventListener('click', () => {
+      this.openCreate();
+      window.showPage('new-order');
+    });
+
+    this.btnCancel?.addEventListener('click', () => {
+      window.showPage('orders-list');
+      this.setReadOnly(false);
+    });
+
+    this.btnSave?.addEventListener('click', () => this.save('final'));
+    this.btnSaveDraft?.addEventListener('click', () => this.save('draft'));
+
+    this.btnAddItem?.addEventListener('click', () => {
+      if (this.isReadOnly) return;
+      this.addItem();
+    });
+
+    // делегирование по таблице позиций
+    this.itemsTbody?.addEventListener('input', (e) => this.onItemFieldChange(e));
+    this.itemsTbody?.addEventListener('click', (e) => this.onItemActionClick(e));
+  }
+
+  setDefaults() {
+    const today = new Date();
+    const plus14 = new Date(today); plus14.setDate(today.getDate() + 14);
+    if (this.inputs.order_date) this.inputs.order_date.value = today.toISOString().slice(0,10);
+    if (this.inputs.planned_completion_date) this.inputs.planned_completion_date.value = plus14.toISOString().slice(0,10);
+    if (this.inputs.discount) this.inputs.discount.value = 0;
+  }
+
+  // ---------- Открытие форм ----------
+  openCreate() {
+    this.isEditMode = false;
+    this.currentOrderId = null;
+    this.title && (this.title.textContent = 'Новый заказ');
+    this.form?.reset();
+    this.setDefaults();
+    this.setReadOnly(false);
+    this.toggleSaveButtons(true);
+    this.itemsLocal = []; // новый заказ начинается без позиций
+    this.renderItems();
+  }
+
+  openEdit(order) {
+    this.isEditMode = true;
+    this.currentOrderId = order.order_id;
+    this.title && (this.title.textContent = `Редактирование заказа #${order.order_id}`);
+    this.fillForm(order);
+    this.setReadOnly(false);
+    this.toggleSaveButtons(true);
+    this.loadItems(order.order_id);
+  }
+
+  openView(order) {
+    this.isEditMode = false;
+    this.currentOrderId = order.order_id;
+    this.title && (this.title.textContent = `Просмотр заказа #${order.order_id}`);
+    this.fillForm(order);
+    this.setReadOnly(true);
+    this.toggleSaveButtons(false);
+    this.loadItems(order.order_id);
+  }
+
+  // ---------- Форма заказа ----------
+  fillForm(order) {
+    this.inputs.order_name.value = order.order_name || '';
+    this.inputs.order_date.value = (order.order_date || '').slice(0,10);
+    this.inputs.planned_completion_date.value = (order.planned_completion_date || '').slice(0,10);
+    this.inputs.total_amount.value = order.total_amount ?? order.discounted_amount ?? 0;
+    this.inputs.discount.value = order.discount ?? 0;
+    this.inputs.client_name.value = order.client_name || '';
+    this.inputs.client_phone.value = order.client_phone || '';
+  }
+
+  setReadOnly(flag) {
+    this.isReadOnly = flag;
+    const disable = el => el && (el.disabled = flag, el.readOnly = flag);
+    Object.values(this.inputs).forEach(disable);
+    // блокируем кнопки управления позициями
+    if (this.btnAddItem) this.btnAddItem.disabled = flag;
+    // инпуты в таблице блокируются при рендере (см. itemRowHTML)
+    this.renderItems();
+  }
+
+  toggleSaveButtons(show) {
+    const disp = show ? 'inline-flex' : 'none';
+    if (this.btnSave) this.btnSave.style.display = disp;
+    if (this.btnSaveDraft) this.btnSaveDraft.style.display = disp;
+  }
+
+  collectOrderHeader() {
+    return {
+      order_id: this.currentOrderId ?? (Math.max(0, ...demoData.orders.map(o => +o.order_id)) + 1),
+      order_name: this.inputs.order_name.value.trim(),
+      order_date: this.inputs.order_date.value,
+      planned_completion_date: this.inputs.planned_completion_date.value,
+      total_amount: Number(this.inputs.total_amount.value || 0),
+      discounted_amount: Number(this.inputs.total_amount.value || 0) * (1 - Number(this.inputs.discount.value || 0)/100),
+      discount: Number(this.inputs.discount.value || 0),
+      client_name: this.inputs.client_name.value.trim(),
+      client_phone: this.inputs.client_phone.value.trim(),
+      status: this.isEditMode
+        ? (demoData.orders.find(o => o.order_id === this.currentOrderId)?.status ?? 'Принят')
+        : 'Принят',
+      priority: demoData.orders.find(o => o.order_id === this.currentOrderId)?.priority ?? 'Средний',
+      manager_id: 1,
+      created_by: 1
+    };
+  }
+
+  save(mode) {
+    if (this.isReadOnly) return;
+
+    // простая валидация
+    if (!this.inputs.order_name.value.trim()) return window.showMessage('Введите название заказа', 'error');
+    if (!this.inputs.client_name.value.trim()) return window.showMessage('Укажите клиента', 'error');
+
+    const header = this.collectOrderHeader();
+
+    // запись шапки
+    if (this.isEditMode) {
+      const idx = demoData.orders.findIndex(o => o.order_id === this.currentOrderId);
+      if (idx >= 0) demoData.orders[idx] = { ...demoData.orders[idx], ...header };
+    } else {
+      demoData.orders.unshift(header);
+      this.currentOrderId = header.order_id;
     }
-    
-    initEventListeners() {
-        // Кнопки управления формой
-        document.getElementById('add-order-btn')?.addEventListener('click', () => {
-            this.showNewOrderForm();
-        });
-        
-        document.getElementById('cancel-order')?.addEventListener('click', () => {
-            this.cancelOrder();
-        });
-        
-        document.getElementById('save-draft')?.addEventListener('click', () => {
-            this.saveDraft();
-        });
-        
-        document.getElementById('save-order')?.addEventListener('click', () => {
-            this.saveOrder();
-        });
-        
-        // Управление деталями
-        document.getElementById('add-detail')?.addEventListener('click', () => {
-            this.showDetailModal();
-        });
-        
-        // Модальное окно деталей
-        document.getElementById('close-detail-modal')?.addEventListener('click', () => {
-            this.closeDetailModal();
-        });
-        
-        document.getElementById('cancel-detail')?.addEventListener('click', () => {
-            this.closeDetailModal();
-        });
-        
-        document.getElementById('save-detail')?.addEventListener('click', () => {
-            this.saveDetail();
-        });
-        
-        // Расчет площади деталей
-        document.getElementById('detail-width')?.addEventListener('input', () => {
-            this.calculateDetailArea();
-        });
-        
-        document.getElementById('detail-height')?.addEventListener('input', () => {
-            this.calculateDetailArea();
-        });
-        
-        // Расчет скидки
-        document.getElementById('discount')?.addEventListener('input', () => {
-            this.calculateDiscountedAmount();
-        });
-        
-        document.getElementById('total-amount-input')?.addEventListener('input', () => {
-            this.calculateDiscountedAmount();
-        });
-        
-        // Установка даты заказа по умолчанию
-        document.getElementById('order-date').value = new Date().toISOString().split('T')[0];
-        
-        // Установка плановой даты завершения (через 2 недели)
-        const plannedDate = new Date();
-        plannedDate.setDate(plannedDate.getDate() + 14);
-        document.getElementById('planned-completion').value = plannedDate.toISOString().split('T')[0];
+
+    // запись позиций
+    this.persistItems(this.currentOrderId);
+
+    window.recalcOrderAggregates?.(this.currentOrderId) || this.recalcAggregatesLocal(this.currentOrderId);
+    window.filtersManager?.applyFilters();
+    window.showMessage(this.isEditMode ? 'Изменения сохранены' : 'Заказ создан', 'success');
+    window.showPage('orders-list');
+  }
+
+  // ---------- Позиции заказа ----------
+  loadItems(orderId) {
+    if (!demoData.order_items) demoData.order_items = [];
+    // делаем «мягкую» копию, чтобы не портить исходники до сохранения
+    const rows = demoData.order_items.filter(x => x.order_id === orderId);
+    this.itemsLocal = rows.map(r => ({ ...r }));
+    this.renderItems();
+  }
+
+  addItem() {
+    const n = this.itemsLocal.length + 1;
+    this.itemsLocal.push({
+      item_id: null,            // будет присвоен при сохранении
+      order_id: this.currentOrderId, // для нового — поставим при сохранении
+      item_name: `Позиция ${n}`,
+      width_mm: 600,
+      height_mm: 400,
+      quantity: 1,
+      material_id: 1,
+      edge_type_id: 1,
+      film_id: 1,
+      milling_type_id: 1,
+      note: ''
+    });
+    this.renderItems(true);
+  }
+
+  duplicateItem(index) {
+    const src = this.itemsLocal[index];
+    if (!src) return;
+    const copy = { ...src, item_id: null, item_name: src.item_name + ' (копия)' };
+    this.itemsLocal.splice(index + 1, 0, copy);
+    this.renderItems(true);
+  }
+
+  deleteItem(index) {
+    this.itemsLocal.splice(index, 1);
+    this.renderItems(true);
+  }
+
+  itemRowHTML(it, i) {
+    const ro = this.isReadOnly ? 'disabled' : '';
+    const area = ((Number(it.width_mm)||0) * (Number(it.height_mm)||0) / 1_000_000) * (Number(it.quantity)||0);
+    return `
+      <tr data-index="${i}">
+        <td>${i+1}</td>
+        <td><input ${ro} type="text" data-field="item_name" value="${(it.item_name||'').replace(/"/g,'&quot;')}" /></td>
+        <td><input ${ro} type="number" min="1" step="10" data-field="width_mm" value="${it.width_mm ?? ''}" /></td>
+        <td><input ${ro} type="number" min="1" step="10" data-field="height_mm" value="${it.height_mm ?? ''}" /></td>
+        <td><input ${ro} type="number" min="1" step="1" data-field="quantity" value="${it.quantity ?? 1}" /></td>
+        <td class="area-cell">${formatArea(area)}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" class="dup" data-action="dup" ${this.isReadOnly?'disabled':''}>⧉</button>
+            <button type="button" class="del" data-action="del" ${this.isReadOnly?'disabled':''}>🗑</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  renderItems(scrollToEnd=false) {
+    if (!this.itemsTbody) return;
+    this.itemsTbody.innerHTML = this.itemsLocal.map((it,i)=>this.itemRowHTML(it,i)).join('');
+    this.updateItemsSummary();
+    if (scrollToEnd) this.itemsTbody.parentElement?.scrollTo({top: this.itemsTbody.parentElement.scrollHeight, behavior:'smooth'});
+  }
+
+  onItemFieldChange(e) {
+    const input = e.target.closest('input[data-field]');
+    if (!input) return;
+    const row = input.closest('tr[data-index]');
+    if (!row) return;
+    const idx = Number(row.dataset.index);
+    const field = input.dataset.field;
+    let val = input.type === 'number' ? Number(input.value || 0) : input.value;
+    if (['width_mm','height_mm','quantity'].includes(field)) val = Math.max(0, Math.round(val));
+    this.itemsLocal[idx][field] = val;
+    // пересчёт строки и итогов
+    const it = this.itemsLocal[idx];
+    const area = ((Number(it.width_mm)||0) * (Number(it.height_mm)||0) / 1_000_000) * (Number(it.quantity)||0);
+    const areaCell = row.querySelector('.area-cell');
+    if (areaCell) areaCell.textContent = formatArea(area);
+    this.updateItemsSummary();
+  }
+
+  onItemActionClick(e) {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const row = btn.closest('tr[data-index]');
+    if (!row) return;
+    const idx = Number(row.dataset.index);
+    const action = btn.dataset.action;
+    if (action === 'dup') this.duplicateItem(idx);
+    else if (action === 'del') this.deleteItem(idx);
+  }
+
+  updateItemsSummary() {
+    let positions = this.itemsLocal.length;
+    let details = 0;
+    let areaM2 = 0;
+    for (const it of this.itemsLocal) {
+      const qty = Number(it.quantity)||0;
+      details += qty;
+      const areaOne = ((Number(it.width_mm)||0) * (Number(it.height_mm)||0)) / 1_000_000;
+      areaM2 += areaOne * qty;
     }
-    
-    populateSelects() {
-        // Заполнение списка материалов
-        const materialSelect = document.getElementById('main-material');
-        const detailMaterialSelect = document.getElementById('detail-material');
-        
-        demoData.materials.forEach(material => {
-            const option = new Option(material.material_name, material.material_id);
-            materialSelect?.appendChild(option.cloneNode(true));
-            detailMaterialSelect?.appendChild(option);
-        });
-        
-        // Заполнение типов кромок
-        const edgeSelect = document.getElementById('edge-type');
-        const detailEdgeSelect = document.getElementById('detail-edge');
-        
-        demoData.edgeTypes.forEach(edge => {
-            const option = new Option(edge.edge_type_name, edge.edge_type_id);
-            edgeSelect?.appendChild(option.cloneNode(true));
-            detailEdgeSelect?.appendChild(option);
-        });
-        
-        // Заполнение пленок
-        const filmSelect = document.getElementById('film');
-        const detailFilmSelect = document.getElementById('detail-film');
-        
-        demoData.films.forEach(film => {
-            const option = new Option(film.film_name, film.film_id);
-            filmSelect?.appendChild(option.cloneNode(true));
-            detailFilmSelect?.appendChild(option);
-        });
-        
-        // Заполнение типов фрезеровки
-        const millingSelect = document.getElementById('milling-type');
-        
-        demoData.millingTypes.forEach(milling => {
-            const option = new Option(milling.milling_type_name, milling.milling_type_id);
-            millingSelect?.appendChild(option);
-        });
+    if (this.sumPositions) this.sumPositions.textContent = positions;
+    if (this.sumDetails) this.sumDetails.textContent = details;
+    if (this.sumArea) this.sumArea.textContent = formatArea(areaM2);
+  }
+
+  persistItems(orderId) {
+    if (!demoData.order_items) demoData.order_items = [];
+    // удалить старые позиции заказа (если редактирование)
+    demoData.order_items = demoData.order_items.filter(x => x.order_id !== orderId);
+
+    // назначить item_id и записать новые
+    let nextItemId = Math.max(0, ...demoData.order_items.map(x => +x.item_id || 0)) + 1;
+    for (const it of this.itemsLocal) {
+      const copy = { ...it };
+      copy.order_id = orderId;
+      if (!copy.item_id) copy.item_id = nextItemId++;
+      demoData.order_items.push(copy);
     }
-    
-    initClientAutocomplete() {
-        const clientInput = document.getElementById('client-name');
-        const clientPhone = document.getElementById('client-phone');
-        const suggestionsDiv = document.getElementById('client-suggestions');
-        
-        clientInput?.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
-            
-            if (query.length < 2) {
-                suggestionsDiv.style.display = 'none';
-                return;
-            }
-            
-        clientInput?.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
-            
-            if (query.length < 2) {
-                suggestionsDiv.style.display = 'none';
-                return;
-            }
-            
-            const matches = demoData.clients.filter(client => 
-                client.client_name.toLowerCase().includes(query)
-            );
-            
-            if (matches.length > 0) {
-                suggestionsDiv.innerHTML = matches.map(client => 
-                    `<div class="client-suggestion" data-client-id="${client.client_id}">
-                        <div class="client-name">${client.client_name}</div>
-                        <div class="client-phone">${client.phones[0]}</div>
-                    </div>`
-                ).join('');
-                
-                suggestionsDiv.style.display = 'block';
-                
-                // Обработчики клика по предложениям
-                suggestionsDiv.querySelectorAll('.client-suggestion').forEach(suggestion => {
-                    suggestion.addEventListener('click', () => {
-                        const clientId = suggestion.dataset.clientId;
-                        const client = demoData.clients.find(c => c.client_id == clientId);
-                        
-                        clientInput.value = client.client_name;
-                        clientPhone.value = client.phones[0];
-                        suggestionsDiv.style.display = 'none';
-                    });
-                });
-            } else {
-                suggestionsDiv.style.display = 'none';
-            }
-        });
-        
-        // Скрытие подсказок при клике вне поля
-        document.addEventListener('click', (e) => {
-            if (!clientInput?.contains(e.target) && !suggestionsDiv?.contains(e.target)) {
-                suggestionsDiv.style.display = 'none';
-            }
-        });
+  }
+
+  // локальный пересчёт агрегатов на случай отсутствия глобального helper
+  recalcAggregatesLocal(orderId) {
+    const items = demoData.order_items.filter(x => x.order_id === orderId);
+    const ord = demoData.orders.find(o => o.order_id === orderId);
+    if (!ord) return;
+    ord.positions_count = items.length;
+    let details = 0, area = 0;
+    for (const it of items) {
+      details += Number(it.quantity)||0;
+      area += ((Number(it.width_mm)||0) * (Number(it.height_mm)||0) / 1_000_000) * (Number(it.quantity)||0);
     }
-    
-    showNewOrderForm() {
-        this.resetForm();
-        this.isEditMode = false;
-        this.currentOrderId = null;
-        document.getElementById('order-form-title').textContent = 'Новый заказ';
-        window.showPage('new-order');
-    }
-    
-    editOrder(order) {
-        this.isEditMode = true;
-        this.currentOrderId = order.order_id;
-        document.getElementById('order-form-title').textContent = `Редактирование заказа #${order.order_id}`;
-        
-        // Заполнение формы данными заказа
-        document.getElementById('order-name').value = order.order_name;
-        document.getElementById('order-date').value = order.order_date;
-        document.getElementById('priority').value = order.priority;
-        document.getElementById('planned-completion').value = order.planned_completion_date;
-        document.getElementById('total-amount-input').value = order.total_amount;
-        document.getElementById('discount').value = order.discount;
-        document.getElementById('client-name').value = order.client_name;
-        document.getElementById('client-phone').value = order.client_phone;
-        document.getElementById('main-material').value = order.material_id || '';
-        document.getElementById('edge-type').value = order.edge_type_id || '';
-        document.getElementById('film').value = order.film_id || '';
-        document.getElementById('milling-type').value = order.milling_type_id || '';
-        document.getElementById('parts-count').value = order.parts_count;
-        document.getElementById('total-area').value = order.total_area;
-        
-        // Загрузка деталей заказа
-        this.currentDetails = getOrderDetails(order.order_id) || [];
-        this.renderDetails();
-        
-        this.calculateDiscountedAmount();
-    }
-    
-    resetForm() {
-        document.getElementById('order-form').reset();
-        this.currentDetails = [];
-        this.renderDetails();
-        
-        // Установка значений по умолчанию
-        document.getElementById('order-date').value = new Date().toISOString().split('T')[0];
-        const plannedDate = new Date();
-        plannedDate.setDate(plannedDate.getDate() + 14);
-        document.getElementById('planned-completion').value = plannedDate.toISOString().split('T')[0];
-        document.getElementById('priority').value = 'Средний';
-        document.getElementById('discount').value = 0;
-        document.getElementById('parts-count').value = 1;
-    }
-    
-    showDetailModal(detailIndex = -1) {
-        this.editingDetailIndex = detailIndex;
-        const modal = document.getElementById('detail-modal');
-        
-        if (detailIndex >= 0) {
-            // Редактирование существующей детали
-            const detail = this.currentDetails[detailIndex];
-            document.getElementById('detail-modal-title').textContent = 'Редактировать деталь';
-            document.getElementById('detail-name').value = detail.detail_name;
-            document.getElementById('detail-number').value = detail.detail_number;
-            document.getElementById('detail-width').value = detail.width;
-            document.getElementById('detail-height').value = detail.height;
-            document.getElementById('detail-quantity').value = detail.quantity;
-            document.getElementById('detail-material').value = detail.material_id || '';
-            document.getElementById('detail-edge').value = detail.edge_type_id || '';
-            document.getElementById('detail-film').value = detail.film_id || '';
-            document.getElementById('detail-note').value = detail.note || '';
-        } else {
-            // Новая деталь
-            document.getElementById('detail-modal-title').textContent = 'Добавить деталь';
-            document.getElementById('detail-form').reset();
-            const nextNumber = this.currentDetails.length + 1;
-            document.getElementById('detail-number').value = nextNumber;
-            document.getElementById('detail-quantity').value = 1;
-        }
-        
-        modal.classList.add('active');
-        this.calculateDetailArea();
-    }
-    
-    closeDetailModal() {
-        document.getElementById('detail-modal').classList.remove('active');
-        this.editingDetailIndex = -1;
-    }
-    
-    saveDetail() {
-        const form = document.getElementById('detail-form');
-        if (!form.checkValidity()) {
-            form.reportValidity();
-            return;
-        }
-        
-        const detailData = {
-            detail_name: document.getElementById('detail-name').value,
-            detail_number: parseInt(document.getElementById('detail-number').value),
-            width: parseFloat(document.getElementById('detail-width').value),
-            height: parseFloat(document.getElementById('detail-height').value),
-            quantity: parseInt(document.getElementById('detail-quantity').value),
-            area: (parseFloat(document.getElementById('detail-width').value) * 
-                   parseFloat(document.getElementById('detail-height').value) * 
-                   parseInt(document.getElementById('detail-quantity').value)) / 1000000, // в м²
-            material_id: document.getElementById('detail-material').value || null,
-            edge_type_id: document.getElementById('detail-edge').value || null,
-            film_id: document.getElementById('detail-film').value || null,
-            note: document.getElementById('detail-note').value
-        };
-        
-        if (this.editingDetailIndex >= 0) {
-            // Обновление существующей детали
-            this.currentDetails[this.editingDetailIndex] = {
-                ...this.currentDetails[this.editingDetailIndex],
-                ...detailData
-            };
-        } else {
-            // Добавление новой детали
-            detailData.detail_id = Date.now(); // Временный ID
-            this.currentDetails.push(detailData);
-        }
-        
-        this.renderDetails();
-        this.updateOrderTotals();
-        this.closeDetailModal();
-    }
-    
-    renderDetails() {
-        const container = document.getElementById('details-container');
-        
-        if (this.currentDetails.length === 0) {
-            container.innerHTML = '<p class="no-details">Детали не добавлены</p>';
-            return;
-        }
-        
-        container.innerHTML = this.currentDetails.map((detail, index) => {
-            const material = getMaterialById(detail.material_id);
-            const edge = demoData.edgeTypes.find(e => e.edge_type_id == detail.edge_type_id);
-            const film = demoData.films.find(f => f.film_id == detail.film_id);
-            
-            return `
-                <div class="detail-item">
-                    <div class="detail-info">
-                        <h4>${detail.detail_name}</h4>
-                        <div class="detail-specs">
-                            №${detail.detail_number} | 
-                            ${detail.width} × ${detail.height} мм | 
-                            Кол-во: ${detail.quantity} шт | 
-                            Площадь: ${detail.area.toFixed(3)} м²
-                            ${material ? ` | Материал: ${material.material_name}` : ''}
-                            ${edge ? ` | Кромка: ${edge.edge_type_name}` : ''}
-                            ${film ? ` | Пленка: ${film.film_name}` : ''}
-                            ${detail.note ? ` | ${detail.note}` : ''}
-                        </div>
-                    </div>
-                    <div class="detail-actions">
-                        <button class="action-btn edit" onclick="window.orderFormManager.showDetailModal(${index})" title="Редактировать">✏</button>
-                        <button class="action-btn delete" onclick="window.orderFormManager.removeDetail(${index})" title="Удалить">🗑</button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-    
-    removeDetail(index) {
-        if (confirm('Удалить эту деталь?')) {
-            this.currentDetails.splice(index, 1);
-            this.renderDetails();
-            this.updateOrderTotals();
-        }
-    }
-    
-    calculateDetailArea() {
-        const width = parseFloat(document.getElementById('detail-width').value) || 0;
-        const height = parseFloat(document.getElementById('detail-height').value) || 0;
-        const quantity = parseInt(document.getElementById('detail-quantity').value) || 1;
-        
-        const area = (width * height * quantity) / 1000000; // в м²
-        
-        // Показываем площадь в интерфейсе (можно добавить элемент для отображения)
-        console.log(`Площадь детали: ${area.toFixed(3)} м²`);
-    }
-    
-    updateOrderTotals() {
-        const totalArea = this.currentDetails.reduce((sum, detail) => sum + detail.area, 0);
-        const totalParts = this.currentDetails.reduce((sum, detail) => sum + detail.quantity, 0);
-        
-        document.getElementById('total-area').value = totalArea.toFixed(2);
-        document.getElementById('parts-count').value = totalParts;
-    }
-    
-    calculateDiscountedAmount() {
-        const totalAmount = parseFloat(document.getElementById('total-amount-input').value) || 0;
-        const discount = parseFloat(document.getElementById('discount').value) || 0;
-        const discountedAmount = totalAmount * (1 - discount / 100);
-        
-        // Можно добавить элемент для отображения суммы со скидкой
-        console.log(`Сумма со скидкой: ${formatCurrency(discountedAmount)}`);
-    }
-    
-    cancelOrder() {
-        if (confirm('Отменить создание/редактирование заказа? Несохраненные данные будут потеряны.')) {
-            window.showPage('orders-list');
-        }
-    }
-    
-    saveDraft() {
-        if (this.validateForm()) {
-            const orderData = this.collectFormData();
-            orderData.status = 'Черновик';
-            
-            if (this.isEditMode) {
-                this.updateOrder(orderData);
-            } else {
-                this.createOrder(orderData);
-            }
-            
-            window.showMessage('Черновик сохранен', 'success');
-        }
-    }
-    
-    saveOrder() {
-        if (this.validateForm()) {
-            const orderData = this.collectFormData();
-            orderData.status = 'Принят';
-            
-            if (this.isEditMode) {
-                this.updateOrder(orderData);
-            } else {
-                this.createOrder(orderData);
-            }
-            
-            window.showMessage(`Заказ ${this.isEditMode ? 'обновлен' : 'создан'}`, 'success');
-            window.showPage('orders-list');
-        }
-    }
-    
-    validateForm() {
-        const form = document.getElementById('order-form');
-        if (!form.checkValidity()) {
-            form.reportValidity();
-            return false;
-        }
-        
-        if (this.currentDetails.length === 0) {
-            window.showMessage('Добавьте хотя бы одну деталь к заказу', 'error');
-            return false;
-        }
-        
-        return true;
-    }
-    
-    collectFormData() {
-        const clientName = document.getElementById('client-name').value;
-        const clientPhone = document.getElementById('client-phone').value;
-        
-        // Найти или создать клиента
-        let client = demoData.clients.find(c => c.client_name === clientName);
-        if (!client) {
-            const newClientId = Math.max(...demoData.clients.map(c => c.client_id)) + 1;
-            client = {
-                client_id: newClientId,
-                client_name: clientName,
-                phones: clientPhone ? [clientPhone] : []
-            };
-            demoData.clients.push(client);
-        }
-        
-        return {
-            order_id: this.currentOrderId || (Math.max(...demoData.orders.map(o => o.order_id)) + 1),
-            order_name: document.getElementById('order-name').value,
-            client_id: client.client_id,
-            client_name: client.client_name,
-            client_phone: clientPhone,
-            order_date: document.getElementById('order-date').value,
-            priority: document.getElementById('priority').value,
-            planned_completion_date: document.getElementById('planned-completion').value,
-            total_amount: parseFloat(document.getElementById('total-amount-input').value) || 0,
-            discount: parseFloat(document.getElementById('discount').value) || 0,
-            discounted_amount: (parseFloat(document.getElementById('total-amount-input').value) || 0) * 
-                             (1 - (parseFloat(document.getElementById('discount').value) || 0) / 100),
-            paid_amount: 0,
-            payment_date: null,
-            parts_count: parseInt(document.getElementById('parts-count').value) || 0,
-            total_area: parseFloat(document.getElementById('total-area').value) || 0,
-            material_id: document.getElementById('main-material').value || null,
-            edge_type_id: document.getElementById('edge-type').value || null,
-            film_id: document.getElementById('film').value || null,
-            milling_type_id: document.getElementById('milling-type').value || null,
-            manager_id: 1, // Текущий пользователь
-            created_by: 1,
-            completion_date: null,
-            details: [...this.currentDetails]
-        };
-    }
-    
-    createOrder(orderData) {
-        demoData.orders.unshift(orderData);
-        
-        // Добавить детали в базу данных деталей
-        orderData.details.forEach(detail => {
-            detail.order_id = orderData.order_id;
-            detail.detail_id = Math.max(...demoData.orderDetails.map(d => d.detail_id), 0) + 1;
-            demoData.orderDetails.push(detail);
-        });
-        
-        if (window.filtersManager) {
-            window.filtersManager.applyFilters();
-        }
-    }
-    
-    updateOrder(orderData) {
-        const index = demoData.orders.findIndex(o => o.order_id === this.currentOrderId);
-        if (index !== -1) {
-            demoData.orders[index] = { ...demoData.orders[index], ...orderData };
-            
-            // Обновить детали
-            demoData.orderDetails = demoData.orderDetails.filter(d => d.order_id !== this.currentOrderId);
-            orderData.details.forEach(detail => {
-                detail.order_id = this.currentOrderId;
-                demoData.orderDetails.push(detail);
-            });
-            
-            if (window.filtersManager) {
-                window.filtersManager.applyFilters();
-            }
-        }
-    }
+    ord.details_total = details;
+    ord.total_area = Number(area.toFixed(1));
+  }
 }
 
-// Экспорт для использования в других модулях
 window.OrderFormManager = OrderFormManager;

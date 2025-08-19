@@ -96,16 +96,19 @@
                 <table class="orders-table" id="orders-table">
                     <thead>
                         <tr>
-                            <th class="sortable" data-sort="order_id">№ заказа</th>
-                            <th class="sortable" data-sort="order_date">Дата</th>
-                            <th class="sortable" data-sort="client_name">Клиент</th>
-                            <th>Телефон</th>
-                            <th class="sortable" data-sort="total_amount">Сумма</th>
-                            <th class="sortable" data-sort="priority">Приоритет</th>
-                            <th class="sortable" data-sort="status">Статус</th>
-                            <th class="sortable" data-sort="planned_completion_date">Срок</th>
-                            <th>Действия</th>
-                        </tr>
+						  <th>№ заказа</th>
+						  <th class="sortable" data-sort="order_date">Дата</th>
+						  <th>Клиент / Заказ</th>
+						  <th>Телефон</th>
+						  <th class="sortable" data-sort="discounted_amount">Сумма</th>
+						  <th class="sortable" data-sort="priority">Приоритет</th>
+						  <th class="sortable" data-sort="status">Статус</th>
+						  <th class="sortable" data-sort="planned_completion_date">Срок</th>
+						  <th>Кол-во позиций</th>
+						  <th>Деталей всего</th>
+						  <th>Площадь, м²</th>
+						  <th>Действия</th>
+						</tr>
                     </thead>
                     <tbody id="orders-tbody">
                         <!-- Orders will be populated by JavaScript -->
@@ -166,6 +169,33 @@
                             <input type="number" id="discount" step="0.1" min="0" max="100" value="0">
                         </div>
                     </div>
+                    <h3 class="section-title" style="margin-top:16px;">Позиции заказа</h3>
+					<div id="order-items-section">
+					  <div class="items-toolbar">
+						<button type="button" id="add-item" class="btn btn-primary">+ Добавить позицию</button>
+					  </div>
+
+					  <table class="items-table">
+						<thead>
+						  <tr>
+							<th>#</th>
+							<th>Наименование</th>
+							<th>Ширина, мм</th>
+							<th>Высота, мм</th>
+							<th>Кол-во</th>
+							<th>Площадь, м²</th>
+							<th>Действия</th>
+						  </tr>
+						</thead>
+						<tbody id="order-items-tbody"></tbody>
+					  </table>
+
+					  <div class="items-summary">
+						<div><b>Позиций:</b> <span id="sum-positions">0</span></div>
+						<div><b>Деталей всего:</b> <span id="sum-details">0</span></div>
+						<div><b>Площадь:</b> <span id="sum-area">0 м²</span></div>
+					  </div>
+					</div>
                 </div>
 
                 <!-- Client Info Section -->
