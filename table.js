@@ -94,8 +94,8 @@ class TableManager {
         <td class="text-center">${order.details_total ?? 0}</td>
         <td class="text-right">${formatArea(order.total_area ?? 0)}</td>
 
-        <td>
-          <div class="action-buttons">
+        <td class="actions-col">
+		  <div class="action-buttons">
             <button class="action-btn view" data-action="view" data-order-id="${order.order_id}" title="Просмотр">👁</button>
             <button class="action-btn edit" data-action="edit" data-order-id="${order.order_id}" title="Редактировать">✏</button>
             <button class="action-btn status prev" data-action="prev-status" data-order-id="${order.order_id}" title="Предыдущий статус">⟵</button>

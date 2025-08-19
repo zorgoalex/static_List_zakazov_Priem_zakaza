@@ -240,7 +240,7 @@ body {
     background: white;
     border-radius: 12px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    overflow: hidden;
+    overflow-x: auto; /* <-- ГЛАВНОЕ ИЗМЕНЕНИЕ: включает прокрутку по горизонтали */
     margin-bottom: 1.5rem;
 }
 
@@ -276,6 +276,17 @@ body {
     vertical-align: middle;
 }
 
+/* больше воздуха справа и внутри последней колонки */
+.table-container {
+  padding-right: 16px;             /* основной отступ от правого края */
+}
+
+.orders-table th:last-child,
+.orders-table td:last-child {
+  padding-right: calc(1rem + 16px); /* добавка к стандартному 1rem */
+}
+
+
 .orders-table tbody tr:hover {
     background: #f8fafc;
 }
@@ -302,25 +313,44 @@ body {
 .priority-medium { color: #d97706; }
 .priority-low { color: #65a30d; }
 
+/* Колонка действий: всегда видна и вмещает все кнопки */
+th.actions-col,
+td.actions-col { 
+  width: 220px;
+  min-width: 220px;
+  padding-right: 2rem; /* <-- ДОБАВЛЕНО: Увеличиваем отступ справа */
+}
+
 /* Action buttons */
+/* Кнопки действий: компактные, переносятся на 2 строки */
 .action-buttons {
-    display: flex;
-    gap: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;          /* <-- разрешаем перенос */
+  gap: 6px;                 /* компактнее */
+  row-gap: 6px;
+  overflow: visible;        /* чтобы ничего не обрезалось */
 }
 
 .action-btn {
-    padding: 0.5rem;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.8rem;
-    transition: all 0.2s;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  width: 28px;              /* было 32px */
+  height: 28px;
+  padding: 0;               /* вместо 0.5rem */
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
+
+/* На чуть более узких экранах ещё компактнее */
+@media (max-width: 1400px) {
+  th.actions-col, td.actions-col { width: 200px; min-width: 200px; }
+  .action-buttons { gap: 4px; row-gap: 4px; }
+  .action-btn { width: 26px; height: 26px; }
+}
+
+/* Если таблица обёрнута контейнером — разрешим горизонтальный скролл как запасной вариант */
+.table-wrapper, .orders-table-wrapper { overflow-x: auto; }
+
 
 .action-btn.edit {
     background: #eff6ff;
@@ -905,3 +935,46 @@ body {
 .row-actions .dup { background:#f1f5f9; }
 .row-actions .del { background:#fee2e2; color:#b91c1c; }
 .items-summary { display:flex; gap:24px; margin-top:8px; color:#111827; }
+
+/* Отступ справа у колонки действий и у кнопок */
+:root { --edge-pad: 16px; } /* можно менять */
+
+#orders-list td.actions-col,
+#orders-list th.actions-col {
+  padding-right: calc(var(--edge-pad) + 6px);
+}
+
+#orders-list .action-buttons {
+  margin-right: var(--edge-pad);
+}
+
+/* На всякий случай — если где-то нет класса actions-col */
+#orders-list table tr > th:last-child,
+#orders-list table tr > td:last-child {
+  padding-right: calc(var(--edge-pad) + 6px);
+}
+
+/* 
+  Гарантированный отступ для последней колонки с действиями.
+  Это создаст "воздух" между кнопками и краем контейнера, 
+  даже при горизонтальной прокрутке.
+*/
+.orders-table th:last-child,
+.orders-table td:last-child {
+    padding-right: 24px; /* <-- Устанавливаем увеличенный отступ справа */
+}
+
+/* --- Стили для уменьшения шрифта в таблице --- */
+
+/* Уменьшаем шрифт для ячеек в колонках "Дата" (2-я) и "Срок" (8-я) */
+#orders-table td:nth-child(2),
+#orders-table td:nth-child(8) {
+    font-size: 0.8rem; /* Уменьшенный размер, примерно на 20% */
+}
+
+/* Уменьшаем шрифт для заголовков "Кол-во позиций" (9-й) и "Деталей всего" (10-й) */
+#orders-table th:nth-child(9),
+#orders-table th:nth-child(10) {
+    font-size: 0.75rem; /* Делаем заголовки еще компактнее */
+    line-height: 1.2;   /* Улучшаем читаемость при переносе строк */
+}
