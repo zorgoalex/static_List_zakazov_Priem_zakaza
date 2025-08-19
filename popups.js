@@ -38,7 +38,7 @@ class OrderFormManager {
     this.form = document.getElementById('order-form');
 
     // позиции заказа
-    this.btnAddItem = document.getElementById('add-item');
+    this.btnAddItem = document.getElementById('add-item-btn');
     this.itemsTbody = document.getElementById('order-items-tbody');
     this.sumPositions = document.getElementById('sum-positions');
     this.sumDetails = document.getElementById('sum-details');
@@ -67,6 +67,16 @@ class OrderFormManager {
     // делегирование по таблице позиций
     this.itemsTbody?.addEventListener('input', (e) => this.onItemFieldChange(e));
     this.itemsTbody?.addEventListener('click', (e) => this.onItemActionClick(e));
+    
+    // popups.js, внутри bindBaseEvents()
+
+	// --- ДОБАВИТЬ ЭТОТ КОД ---
+	// Управление аккордеоном
+	const accordionHeader = document.querySelector('.accordion-header');
+	accordionHeader?.addEventListener('click', function() {
+		this.classList.toggle('active');
+	});
+	// --- КОНЕЦ ДОБАВЛЕНИЯ ---
   }
 
   setDefaults() {

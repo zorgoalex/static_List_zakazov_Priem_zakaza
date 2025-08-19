@@ -978,3 +978,60 @@ td.actions-col {
     font-size: 0.75rem; /* Делаем заголовки еще компактнее */
     line-height: 1.2;   /* Улучшаем читаемость при переносе строк */
 }
+
+/* --- Стили для аккордеона в форме заказа --- */
+.accordion-section {
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 2rem;
+}
+
+.accordion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding: 1rem 0;
+    user-select: none;
+}
+
+.accordion-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #1e293b;
+}
+
+.accordion-header span {
+    font-size: 0.9rem;
+    color: #3b82f6;
+}
+
+.accordion-header::before {
+    content: '►';
+    font-size: 0.8em;
+    margin-right: 1rem;
+    color: #64748b;
+    transition: transform 0.3s ease;
+}
+
+.accordion-header.active::before {
+    transform: rotate(90deg);
+}
+
+.accordion-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease-out, padding 0.4s ease-out;
+    padding: 0;
+}
+
+.accordion-header.active + .accordion-content {
+    max-height: 600px; /* Достаточная высота для контента */
+    padding-bottom: 2rem;
+    transition: max-height 0.5s ease-in, padding 0.5s ease-in;
+}
+
+/* Переопределяем заголовки внутри аккордеона, чтобы они были меньше */
+.accordion-content .section-title {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
